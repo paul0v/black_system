@@ -17,7 +17,6 @@ export default function DetalhesOSPage({ params }: { params: { id: string } }) {
   const [formData, setFormData] = useState({
     defeito_relatado: '',
     diagnostico: '',
-    prazo_estimado: '',
   })
 
   useEffect(() => {
@@ -29,7 +28,6 @@ export default function DetalhesOSPage({ params }: { params: { id: string } }) {
           setFormData({
             defeito_relatado: dados.defeito_relatado,
             diagnostico: dados.diagnostico || '',
-            prazo_estimado: dados.prazo_estimado?.split('T')[0] || '',
           })
         }
       } catch (err) {
@@ -56,10 +54,7 @@ export default function DetalhesOSPage({ params }: { params: { id: string } }) {
 
   const handleSave = async () => {
     try {
-      const result = await atualizarOS(params.id, {
-        ...formData,
-        prazo_estimado: formData.prazo_estimado ? new Date(formData.prazo_estimado) : undefined,
-      })
+      const result = await atualizarOS(params.id, formData)
       if (result.success) {
         setOS({ ...os, ...formData })
         setEditando(false)
@@ -199,11 +194,11 @@ export default function DetalhesOSPage({ params }: { params: { id: string } }) {
           </p>
         </div>
 
-        {/* Prazo */}
+        {/* Status da OS */}
         <div className="bg-gray-900/50 rounded-xl border border-gray-700/50 p-6 shadow-lg backdrop-blur">
-          <p className="text-sm text-gray-400 font-medium mb-2">Prazo Estimado</p>
+          <p className="text-sm text-gray-400 font-medium mb-2">Criada em</p>
           <p className="text-2xl font-bold text-gray-200">
-            {os.prazo_estimado ? new Date(os.prazo_estimado).toLocaleDateString('pt-BR') : '-'}
+            {new Date(os.criado_em).toLocaleDateString('pt-BR')}
           </p>
         </div>
       </div>
@@ -241,23 +236,6 @@ export default function DetalhesOSPage({ params }: { params: { id: string } }) {
           ) : (
             <p className="text-gray-300 bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
               {os.diagnostico || 'Não foi feito diagnóstico ainda'}
-            </p>
-          )}
-        </div>
-
-        {/* Prazo Estimado para Edição */}
-        <div>
-          <label className="block text-sm font-semibold text-gray-100 mb-2">Prazo Estimado</label>
-          {editando ? (
-            <input
-              type="date"
-              value={formData.prazo_estimado}
-              onChange={(e) => setFormData({ ...formData, prazo_estimado: e.target.value })}
-              className="w-full px-4 py-3 bg-gray-800/50 border border-orange-600/30 rounded-lg text-gray-100 focus:ring-2 focus:ring-orange-600"
-            />
-          ) : (
-            <p className="text-gray-300 bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
-              {formData.prazo_estimado || '-'}
             </p>
           )}
         </div>
