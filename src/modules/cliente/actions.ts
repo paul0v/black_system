@@ -1,14 +1,23 @@
 'use server'
 
+import { ZodError } from 'zod'
 import { createClient } from '@/lib/supabase/server'
+import {
+  handleZodError,
+  handleDatabaseError,
+  handleServerAction,
+  logError,
+  logBusinessEvent,
+  type ActionResponse,
+} from '@/lib/errors'
 import { criarClienteSchema } from '@/modules/os/schema'
 import type { CriarClienteInput } from '@/modules/os/schema'
 
 /**
  * Cria um novo cliente
  */
-export async function criarCliente(input: CriarClienteInput) {
-  try {
+export async function criarCliente(input: CriarClienteInput): Promise<ActionResponse> {
+  return handleServerAction(async () => {
     const validado = criarClienteSchema.parse(input)
     const supabase = await createClient()
 
@@ -19,27 +28,30 @@ export async function criarCliente(input: CriarClienteInput) {
       .single()
 
     if (error) {
-      return { success: false, error: error.message }
+      throw error
     }
+
+    logBusinessEvent('Cliente Criado', 'cliente.actions', {
+      clienteId: data.id,
+      nome: validado.nome,
+    })
 
     return {
       success: true,
       message: 'Cliente criado com sucesso',
       id: data.id,
     }
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Erro ao criar cliente',
-    }
-  }
+  }, 'criarCliente')
 }
 
 /**
  * Atualiza um cliente
  */
-export async function atualizarCliente(id: string, updates: Partial<CriarClienteInput>) {
-  try {
+export async function atualizarCliente(
+  id: string,
+  updates: Partial<CriarClienteInput>
+): Promise<ActionResponse> {
+  return handleServerAction(async () => {
     const supabase = await createClient()
 
     const { error } = await supabase
@@ -48,23 +60,23 @@ export async function atualizarCliente(id: string, updates: Partial<CriarCliente
       .eq('id', id)
 
     if (error) {
-      return { success: false, error: error.message }
+      throw error
     }
 
+    logBusinessEvent('Cliente Atualizado', 'cliente.actions', {
+      clienteId: id,
+      camposAtualizados: Object.keys(updates),
+    })
+
     return { success: true, message: 'Cliente atualizado com sucesso' }
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Erro ao atualizar cliente',
-    }
-  }
+  }, 'atualizarCliente')
 }
 
 /**
  * Deleta um cliente
  */
-export async function deletarCliente(id: string) {
-  try {
+export async function deletarCliente(id: string): Promise<ActionResponse> {
+  return handleServerAction(async () => {
     const supabase = await createClient()
 
     const { error } = await supabase
@@ -73,14 +85,11 @@ export async function deletarCliente(id: string) {
       .eq('id', id)
 
     if (error) {
-      return { success: false, error: error.message }
+      throw error
     }
 
+    logBusinessEvent('Cliente Deletado', 'cliente.actions', { clienteId: id })
+
     return { success: true, message: 'Cliente deletado com sucesso' }
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Erro ao deletar cliente',
-    }
-  }
+  }, 'deletarCliente')
 }

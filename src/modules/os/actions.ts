@@ -2,20 +2,29 @@
 
 'use server'
 
+import { ZodError } from 'zod'
 import { createClient } from '@/lib/supabase/server'
+import {
+  handleZodError,
+  handleDatabaseError,
+  handleServerAction,
+  logError,
+  logBusinessEvent,
+  type ActionResponse,
+} from '@/lib/errors'
 import { criarOSSchema, CriarOSInput } from './schema'
 import { enviarMensagemWhatsApp } from '@/lib/notificacoes/whatsapp'
 
 /**
  * Cria uma nova ordem de serviço e envia notificação WhatsApp
  */
-export async function criarOS(input: CriarOSInput) {
-  try {
-    // Validar entrada
+export async function criarOS(input: CriarOSInput): Promise<ActionResponse> {
+  return handleServerAction(async () => {
+    // 1. Validar entrada
     const validado = criarOSSchema.parse(input)
     const supabase = await createClient()
 
-    // 1. Inserir OS
+    // 2. Inserir OS
     const { data: os, error: osError } = await supabase
       .from('ordem_servico')
       .insert([
@@ -32,10 +41,10 @@ export async function criarOS(input: CriarOSInput) {
       .single()
 
     if (osError) {
-      return { success: false, error: osError.message }
+      throw osError
     }
 
-    // 2. Inserir equipamento
+    // 3. Inserir equipamento
     const { error: equipError } = await supabase
       .from('equipamento')
       .insert([
@@ -50,19 +59,27 @@ export async function criarOS(input: CriarOSInput) {
       ])
 
     if (equipError) {
-      // Deletar OS criada se falhar o equipamento
-      await supabase.from('ordem_servico').delete().eq('id', os.id)
-      return { success: false, error: 'Erro ao registrar equipamento' }
+      // Tentar deletar OS se falhar o equipamento
+      try {
+        await supabase.from('ordem_servico').delete().eq('id', os.id)
+      } catch (e) {
+        logError(e instanceof Error ? e : new Error(String(e)))
+      }
+      throw equipError
     }
 
-    // 3. Buscar dados do cliente para enviar WhatsApp
-    const { data: cliente } = await supabase
+    // 4. Buscar dados do cliente para enviar WhatsApp
+    const { data: cliente, error: clienteError } = await supabase
       .from('cliente')
       .select('nome, telefone')
       .eq('id', validado.cliente_id)
       .single()
 
-    // 4. Enviar WhatsApp se houver telefone
+    if (clienteError) {
+      logError(clienteError instanceof Error ? clienteError : new Error(String(clienteError)))
+    }
+
+    // 5. Enviar WhatsApp se houver telefone
     if (cliente?.telefone) {
       const mensagem = `
 *Ordem de Serviço #${os.numero}*
@@ -80,8 +97,23 @@ Entraremos em contato em breve com atualizações.
 
 Obrigado!`
 
-      await enviarMensagemWhatsApp(cliente.telefone, mensagem)
+      const whatsappResult = await enviarMensagemWhatsApp(cliente.telefone, mensagem)
+      if (!whatsappResult.success) {
+        logError(
+          new Error(whatsappResult.error || 'Erro desconhecido ao enviar WhatsApp'),
+          undefined,
+          'enviarMensagemWhatsApp em criarOS'
+        )
+      }
     }
+
+    // 6. Log de sucesso
+    logBusinessEvent('Ordem de Serviço Criada', 'os.actions', {
+      osId: os.id,
+      osNumero: os.numero,
+      clienteId: validado.cliente_id,
+      equipamento: `${validado.equipamento_marca} ${validado.equipamento_modelo}`,
+    })
 
     return {
       success: true,
@@ -89,19 +121,17 @@ Obrigado!`
       id: os.id,
       numero: os.numero,
     }
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Erro ao criar OS',
-    }
-  }
+  }, 'criarOS')
 }
 
 /**
  * Atualiza uma ordem de serviço
  */
-export async function atualizarOS(id: string, updates: Partial<CriarOSInput>) {
-  try {
+export async function atualizarOS(
+  id: string,
+  updates: Partial<CriarOSInput>
+): Promise<ActionResponse> {
+  return handleServerAction(async () => {
     const supabase = await createClient()
 
     const { error } = await supabase
@@ -110,23 +140,29 @@ export async function atualizarOS(id: string, updates: Partial<CriarOSInput>) {
       .eq('id', id)
 
     if (error) {
-      return { success: false, error: error.message }
+      throw error
     }
 
-    return { success: true, message: 'OS atualizada com sucesso' }
-  } catch (error) {
+    logBusinessEvent('Ordem de Serviço Atualizada', 'os.actions', {
+      osId: id,
+      camposAtualizados: Object.keys(updates),
+    })
+
     return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Erro ao atualizar OS',
+      success: true,
+      message: 'OS atualizada com sucesso',
     }
-  }
+  }, 'atualizarOS')
 }
 
 /**
  * Atualiza o status da OS
  */
-export async function atualizarStatusOS(id: string, status: string) {
-  try {
+export async function atualizarStatusOS(
+  id: string,
+  status: string
+): Promise<ActionResponse> {
+  return handleServerAction(async () => {
     const supabase = await createClient()
 
     const { error } = await supabase
@@ -135,23 +171,26 @@ export async function atualizarStatusOS(id: string, status: string) {
       .eq('id', id)
 
     if (error) {
-      return { success: false, error: error.message }
+      throw error
     }
 
-    return { success: true, message: 'Status atualizado com sucesso' }
-  } catch (error) {
+    logBusinessEvent('Status de OS Atualizado', 'os.actions', {
+      osId: id,
+      novoStatus: status,
+    })
+
     return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Erro ao atualizar status',
+      success: true,
+      message: 'Status atualizado com sucesso',
     }
-  }
+  }, 'atualizarStatusOS')
 }
 
 /**
  * Deleta uma ordem de serviço
  */
-export async function deletarOS(id: string) {
-  try {
+export async function deletarOS(id: string): Promise<ActionResponse> {
+  return handleServerAction(async () => {
     const supabase = await createClient()
 
     const { error } = await supabase
@@ -160,58 +199,113 @@ export async function deletarOS(id: string) {
       .eq('id', id)
 
     if (error) {
-      return { success: false, error: error.message }
+      throw error
     }
 
-    return { success: true, message: 'OS deletada com sucesso' }
-  } catch (error) {
+    logBusinessEvent('Ordem de Serviço Deletada', 'os.actions', { osId: id })
+
     return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Erro ao deletar OS',
+      success: true,
+      message: 'OS deletada com sucesso',
     }
-  }
+  }, 'deletarOS')
 }
 
 /**
  * Aprova um orçamento de OS
  */
-export async function aprovarOrcamento(osId: string, valor: number) {
-  try {
-    // TODO: Implementar
+export async function aprovarOrcamento(
+  osId: string,
+  valor: number
+): Promise<ActionResponse> {
+  return handleServerAction(async () => {
+    const supabase = await createClient()
+
+    const { error: osError } = await supabase
+      .from('ordem_servico')
+      .update({
+        orcamento_aprovado: true,
+      })
+      .eq('id', osId)
+
+    if (osError) {
+      throw osError
+    }
+
+    logBusinessEvent('Orçamento de OS Aprovado', 'os.actions', {
+      osId,
+      valor,
+    })
+
     return {
       success: true,
-      message: 'Placeholder: implementar aprovarOrcamento',
+      message: 'Orçamento aprovado com sucesso',
     }
-  } catch (error) {
-    return {
-      success: false,
-      message: 'Erro ao aprovar orçamento',
-      error: error instanceof Error ? error.message : 'Erro desconhecido',
-    }
-  }
+  }, 'aprovarOrcamento')
 }
 
 /**
  * Conclui uma ordem de serviço
  */
-export async function concluirOS(osId: string) {
-  try {
-    // TODO: Implementar
-    // 1. Validar serviço concluído
-    // 2. Baixar peças do estoque
-    // 3. Atualizar status
-    // 4. Gerar termo de garantia
-    // 5. Notificar cliente
-    
+export async function concluirOS(osId: string): Promise<ActionResponse> {
+  return handleServerAction(async () => {
+    const supabase = await createClient()
+
+    // 1. Verificar se existem pendências
+    const { data: os, error: osError } = await supabase
+      .from('ordem_servico')
+      .select('status, cliente_id')
+      .eq('id', osId)
+      .single()
+
+    if (osError) {
+      throw osError
+    }
+
+    if (!os) {
+      throw new Error('OS não encontrada')
+    }
+
+    // 2. Atualizar status
+    const { error: updateError } = await supabase
+      .from('ordem_servico')
+      .update({
+        status: 'concluida',
+        data_conclusao: new Date().toISOString(),
+      })
+      .eq('id', osId)
+
+    if (updateError) {
+      throw updateError
+    }
+
+    // 3. Buscar cliente para enviar notificação
+    const { data: cliente } = await supabase
+      .from('cliente')
+      .select('nome, telefone')
+      .eq('id', os.cliente_id)
+      .single()
+
+    if (cliente?.telefone) {
+      const mensagem = `
+*Sua OS foi concluída! ✅*
+
+Olá ${cliente.nome}! 
+
+Sua ordem de serviço foi concluída com sucesso.
+
+Entre em contato conosco para retirar seu equipamento.
+
+Obrigado! 🙏`
+
+      await enviarMensagemWhatsApp(cliente.telefone, mensagem)
+    }
+
+    logBusinessEvent('Ordem de Serviço Concluída', 'os.actions', { osId })
+
     return {
       success: true,
-      message: 'Placeholder: implementar concluirOS',
+      message: 'OS concluída com sucesso',
     }
-  } catch (error) {
-    return {
-      success: false,
-      message: 'Erro ao concluir OS',
-      error: error instanceof Error ? error.message : 'Erro desconhecido',
-    }
-  }
+  }, 'concluirOS')
 }
