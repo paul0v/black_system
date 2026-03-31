@@ -10,7 +10,7 @@ export const criarOSSchema = z.object({
   equipamento_modelo: z.string().min(1, "Modelo do equipamento é obrigatório"),
   equipamento_imei: z.string().min(1, "IMEI ou serial é obrigatório"),
   acessorios_entregues: z.string().optional(),
-  prazo_estimado: z.coerce.date().optional(),
+  data_entrada: z.coerce.date().default(() => new Date()),
 });
 
 export const aproveOrcamentoSchema = z.object({

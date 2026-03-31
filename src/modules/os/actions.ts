@@ -4,9 +4,10 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { criarOSSchema, CriarOSInput } from './schema'
+import { enviarMensagemWhatsApp } from '@/lib/notificacoes/whatsapp'
 
 /**
- * Cria uma nova ordem de serviço
+ * Cria uma nova ordem de serviço e envia notificação WhatsApp
  */
 export async function criarOS(input: CriarOSInput) {
   try {
@@ -14,14 +15,14 @@ export async function criarOS(input: CriarOSInput) {
     const validado = criarOSSchema.parse(input)
     const supabase = await createClient()
 
-    // 1. Inserir OS (número é gerado automaticamente pelo trigger)
+    // 1. Inserir OS
     const { data: os, error: osError } = await supabase
       .from('ordem_servico')
       .insert([
         {
           cliente_id: validado.cliente_id,
           defeito_relatado: validado.defeito_relatado,
-          prazo_estimado: validado.prazo_estimado,
+          data_entrada: validado.data_entrada,
           status: 'aberta',
           orcamento_aprovado: false,
           dias_garantia: 30,
@@ -54,10 +55,39 @@ export async function criarOS(input: CriarOSInput) {
       return { success: false, error: 'Erro ao registrar equipamento' }
     }
 
+    // 3. Buscar dados do cliente para enviar WhatsApp
+    const { data: cliente } = await supabase
+      .from('cliente')
+      .select('nome, telefone')
+      .eq('id', validado.cliente_id)
+      .single()
+
+    // 4. Enviar WhatsApp se houver telefone
+    if (cliente?.telefone) {
+      const mensagem = `
+*Ordem de Serviço #${os.numero}*
+
+Olá ${cliente.nome}! 👋
+
+Sua ordem de serviço foi aberta com sucesso.
+
+📋 *Detalhes:*
+- Número: OS-${os.numero}
+- Equipamento: ${validado.equipamento_marca} ${validado.equipamento_modelo}
+- Defeito: ${validado.defeito_relatado.substring(0, 50)}...
+
+Entraremos em contato em breve com atualizações.
+
+Obrigado!`
+
+      await enviarMensagemWhatsApp(cliente.telefone, mensagem)
+    }
+
     return {
       success: true,
       message: `OS #${os.numero} criada com sucesso`,
       id: os.id,
+      numero: os.numero,
     }
   } catch (error) {
     return {
