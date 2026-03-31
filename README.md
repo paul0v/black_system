@@ -1,36 +1,145 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Assistência Tech - Sistema de Gestão de Assistência Técnica
 
-## Getting Started
+Um sistema web completo e robusto para gerenciamento de assistência técnica, desenvolvido com **Next.js 14**, **React**, **TypeScript**, **Tailwind CSS** e **Supabase**.
 
-First, run the development server:
+## 🎯 Funcionalidades Principais
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+### Módulo de Ordens de Serviço (OS)
+- ✅ Abertura rápida de OS com dados do cliente e equipamento
+- ✅ Rastreamento de status em tempo real
+- ✅ Aprovação de orçamento online
+- ✅ Histórico de serviços por cliente
+- ✅ Termos de garantia automáticos com assinatura digital
+- ✅ Impressão de documentos (via do cliente, termo de garantia)
+
+### Módulo de Estoque
+- ✅ Cadastro de peças, acessórios e aparelhos para venda
+- ✅ Alertas automáticos de baixo estoque
+- ✅ Rastreabilidade de peças por OS e por técnico
+- ✅ Movimentação de estoque integrada
+- ✅ Relatórios de peças mais utilizadas
+
+### Módulo de Vendas (PDV)
+- ✅ Ponto de venda para acessórios e aparelhos
+- ✅ Integração automática com estoque
+- ✅ Múltiplas formas de pagamento
+- ✅ Recibos automatizados
+
+### Gestão Financeira & Relatórios
+- ✅ Registro de pagamentos por OS
+- ✅ Bloqueio de entrega sem pagamento
+- ✅ Dashboard com KPIs em tempo real
+- ✅ Relatórios de faturamento mensal
+
+### Controle de Acesso
+- ✅ 3 perfis: Admin, Técnico, Atendente
+- ✅ Row Level Security (RLS) no banco de dados
+
+## 🏗️ Arquitetura
+
+Arquitetura **monólito modular** com 4 camadas bem definidas:
+
+```
+Apresentação   → React Components (app/*)
+Aplicação      → Server Actions & API Routes (app/api/*)
+Domínio        → Types, Schemas, Regras de Negócio
+Infraestrutura → Supabase, APIs Externas, Utils
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🛠️ Stack de Tecnologias
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Framework**: Next.js 14 (App Router)
+- **Linguagem**: TypeScript
+- **Styling**: Tailwind CSS
+- **BD**: Supabase (PostgreSQL)
+- **Validação**: Zod
+- **Ícones**: Lucide React
+- **Deploy**: Vercel (CI/CD automático)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 📋 Pré-requisitos
 
-## Learn More
+- Node.js 18+
+- npm ou yarn
+- Conta Supabase (gratuita)
 
-To learn more about Next.js, take a look at the following resources:
+## 🚀 Como Usar
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 1. Instalação
+```bash
+npm install
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 2. Variáveis de Ambiente
+```bash
+cp .env.example .env.local
+```
 
-## Deploy on Vercel
+Preencha os valores em `.env.local`:
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-chave-anon
+SUPABASE_SERVICE_KEY=sua-chave-service
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 3. Desenvolvimento
+```bash
+npm run dev
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Acesse [http://localhost:3000](http://localhost:3000)
+
+### 4. Build para Produção
+```bash
+npm run build
+npm start
+```
+
+## 📁 Estrutura do Projeto
+
+```
+src/
+  ├── modules/        # Lógica de negócio por módulo
+  │   ├── os/         # Ordens de Serviço
+  │   ├── estoque/    # Gestão de Estoque
+  │   ├── vendas/     # Módulo de Vendas
+  │   ├── impressao/  # Geração de PDFs
+  │   └── notificacoes/ # WhatsApp, Email
+  ├── lib/            # Adaptadores e infraestrutura
+  │   └── supabase/   # Cliente Supabase
+  └── components/     # Componentes React reutilizáveis
+
+supabase/
+  └── migrations/     # SQL migrations
+
+.github/
+  └── copilot-instructions.md # Instruções para IA
+```
+
+## 🔒 Segurança
+
+- Autenticação via Supabase Auth
+- RLS (Row Level Security) por perfil (admin, técnico, atendente)
+- Validação Zod em todas as APIs
+- Service Key apenas em Server Actions
+
+## 📚 Documentação
+
+- Veja `.github/copilot-instructions.md` para guia de arquitetura detalhado
+- Veja `supabase/migrations/` para schema do banco de dados
+
+## 📞 Próximas Etapas
+
+1. Configurar Supabase e executar migrations
+2. Implementar autenticação
+3. Desenvolver módulo de OS (coração do sistema)
+4. Adicionar módulo de Estoque
+5. Implementar PDV
+6. Integrar notificações (WhatsApp, Email)
+
+## 📄 Licença
+
+Proprietário - Assistência Tech Management System
+
+---
+
+**Desenvolvido como um sistema robusto e escalável para pequenos e médios negócios de assistência técnica.**
