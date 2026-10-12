@@ -1,7 +1,7 @@
 // Adaptador estilo "query builder" (compatível com a API usada nas Server Actions)
 // para acessar o Firestore através do Firebase Admin SDK.
 import type { Query, WhereFilterOp } from 'firebase-admin/firestore'
-import { adminAuth, adminDb } from './admin'
+import { adminDb } from './admin'
 
 interface DbError {
   message: string
@@ -277,15 +277,39 @@ export function createFirebaseClient() {
 
     auth: {
       async signUp({ email, password, options }: { email: string; password: string; options?: { data?: Record<string, any> } }) {
+        // Usa a REST API do Identity Toolkit (mesma usada em signInWithPassword)
+        // em vez de firebase-admin/auth: esse submódulo do Admin SDK arrasta
+        // jwks-rsa -> jose (pacote ESM-only) e quebra o build de produção na
+        // Vercel (ERR_REQUIRE_ESM). Criar conta por email/senha não exige
+        // privilégio de admin, então a REST pública resolve sem essa dependência.
+        const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY
+        if (!apiKey) {
+          return { data: null, error: { message: 'NEXT_PUBLIC_FIREBASE_API_KEY não configurada' } }
+        }
+
         try {
-          const userRecord = await adminAuth().createUser({ email, password })
+          const res = await fetch(
+            `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, password, returnSecureToken: true }),
+            }
+          )
+          const json = await res.json()
+
+          if (!res.ok) {
+            return { data: null, error: { message: json.error?.message || 'Erro ao criar usuário' } }
+          }
+
+          const uid = json.localId as string
           const perfil = options?.data?.perfil || 'tecnico'
           const nome = options?.data?.nome || email
 
           const db = adminDb()
-          await db.collection('usuarios').doc(userRecord.uid).set({
-            id: userRecord.uid,
-            user_id: userRecord.uid,
+          await db.collection('usuarios').doc(uid).set({
+            id: uid,
+            user_id: uid,
             nome,
             email,
             perfil,
@@ -294,7 +318,7 @@ export function createFirebaseClient() {
           })
 
           return {
-            data: { user: { id: userRecord.uid, email }, session: null },
+            data: { user: { id: uid, email }, session: null },
             error: null,
           }
         } catch (err: any) {

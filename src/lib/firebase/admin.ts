@@ -1,7 +1,10 @@
 // Inicialização do Firebase Admin SDK (uso exclusivo em servidor: Server Actions/API Routes)
+// Não importamos 'firebase-admin/auth' de propósito: esse submódulo depende
+// de jwks-rsa -> jose (ESM-only), que quebra o build de produção na Vercel
+// (ERR_REQUIRE_ESM). Login e criação de conta usam a REST API do Identity
+// Toolkit (ver firestore-client.ts), não o Admin SDK de auth.
 import { cert, getApps, initializeApp, type App } from 'firebase-admin/app'
 import { getFirestore, type Firestore } from 'firebase-admin/firestore'
-import { getAuth, type Auth } from 'firebase-admin/auth'
 
 let app: App | null = null
 
@@ -39,8 +42,4 @@ function getAdminApp(): App {
 
 export function adminDb(): Firestore {
   return getFirestore(getAdminApp())
-}
-
-export function adminAuth(): Auth {
-  return getAuth(getAdminApp())
 }
