@@ -5,8 +5,8 @@
 - **Framework**: Next.js 14 (App Router)
 - **Linguagem**: TypeScript
 - **Styling**: Tailwind CSS
-- **Banco de Dados**: Supabase (PostgreSQL)
-- **Autenticação**: Supabase Auth com RLS
+- **Banco de Dados**: Firebase (Firestore)
+- **Autenticação**: Firebase Auth (Admin SDK no servidor + Identity Toolkit REST API para login)
 - **Validação**: Zod
 - **Componentes**: shadcn/ui quando necessário
 - **Notificações**: Evolution API (WhatsApp) + Resend (Email)
@@ -18,14 +18,14 @@ O sistema segue arquitetura em monólito modular com 4 camadas:
 1. **Apresentação** (`app/`, `src/components/`) - React components
 2. **Aplicação** (`src/modules/*/actions.ts`, `app/api/`)  - Server Actions & API Routes
 3. **Domínio** (`src/modules/*/types.ts`, `schema.ts`) - Regras de negócio puras, sem dependências externas
-4. **Infraestrutura** (`src/lib/`) - Adaptadores (Supabase, Evolution, Resend)
+4. **Infraestrutura** (`src/lib/`) - Adaptadores (Firebase, Evolution, Resend)
 
 # Módulos do Sistema
 
 ## 1. Módulo de Ordens de Serviço (`src/modules/os/`)
 - **Tipos**: `types.ts` (OrdemServico, Equipamento, Cliente, Usuario)
 - **Schemas**: `schema.ts` (Zod - validação de entrada)
-- **Queries**: `queries.ts` (consultas ao Supabase)
+- **Queries**: `queries.ts` (consultas ao Firestore)
 - **Actions**: `actions.ts` (Server Actions para CRUD)
 
 Casos de uso:
@@ -68,7 +68,7 @@ Casos de uso:
 export async function criarOS(input: CriarOSInput) {
   const result = criarOSSchema.parse(input)
   // lógica de negócio
-  // chamadas ao Supabase
+  // chamadas ao Firestore (via src/lib/firebase/server.ts)
   return { success: true, id: ... }
 }
 ```
@@ -107,7 +107,7 @@ export async function POST(req: Request) {
 
 ## Ordem recomendada de implementação
 
-1. **Setup Supabase** (migrations, RLS, seed)
+1. **Setup Firebase** (projeto, credenciais do Admin SDK, seed)
 2. **Módulo OS** (coração do sistema)
 3. **Impressão** (PDFs: via cliente, garantia)
 4. **Estoque** (peças e alertas)
@@ -128,25 +128,26 @@ export async function POST(req: Request) {
 ## Variáveis de Ambiente
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_KEY=
+NEXT_PUBLIC_FIREBASE_API_KEY=
+FIREBASE_PROJECT_ID=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY=
 EVOLUTION_API_URL=
 EVOLUTION_API_KEY=
 RESEND_API_KEY=
 NEXT_PUBLIC_APP_URL=
 ```
 
-# Security & RLS
+# Security
 
-- Supabase RLS habilitado por perfil (admin, técnico, atendente)
+- Firestore Security Rules por perfil (admin, técnico, atendente)
 - Middleware de autenticação em rotas protegidas
 - Validação Zod em todas APIs
-- Service Role Key apenas em Server Actions/API Routes
+- Credenciais do Admin SDK (service account) apenas em Server Actions/API Routes, nunca expostas ao cliente
 
 # Notas Importantes
 
 - Não instalar UI libraries extras (shadcn/ui apenas com `npx shadcn-ui@latest add COMPONENT`)
-- Manter types isolados da infraestrutura (sem Supabase em types.ts)
+- Manter types isolados da infraestrutura (sem Firebase em types.ts)
 - Usar `'use server'` em Server Actions
 - Usar `'use client'` apenas quando necessário (setState, event listeners)

@@ -11,6 +11,10 @@ export const criarOSSchema = z.object({
   equipamento_imei: z.string().min(1, "IMEI ou serial é obrigatório"),
   acessorios_entregues: z.string().optional(),
   data_entrada: z.coerce.date().default(() => new Date()),
+  equipamento_checklist: z.record(z.string(), z.boolean()).optional(),
+  equipamento_fotos: z.array(z.string()).max(10, "Máximo de 10 fotos por OS").optional(),
+  equipamento_senha_tipo: z.enum(["nenhuma", "padrao", "pin", "senha"]).optional(),
+  equipamento_senha_valor: z.string().optional(),
 });
 
 export const aproveOrcamentoSchema = z.object({
@@ -22,6 +26,14 @@ export const registrarDiagnosticoSchema = z.object({
   os_id: z.string().uuid(),
   diagnostico: z.string().min(10, "Diagnóstico deve ter pelo menos 10 caracteres"),
   valor_orcamento: z.coerce.number().positive().optional(),
+});
+
+export const criarItemOSSchema = z.object({
+  os_id: z.string().uuid(),
+  descricao: z.string().min(1, "Descrição da peça/serviço é obrigatória"),
+  quantidade: z.coerce.number().positive("Quantidade deve ser maior que zero").default(1),
+  preco_custo: z.coerce.number().min(0, "Custo não pode ser negativo"),
+  preco_unitario: z.coerce.number().positive("Valor cobrado deve ser maior que zero"),
 });
 
 export const registrarPagamentoSchema = z.object({
@@ -65,6 +77,7 @@ export const registrarVendaSchema = z.object({
 export type CriarOSInput = z.infer<typeof criarOSSchema>;
 export type AproveOrcamentoInput = z.infer<typeof aproveOrcamentoSchema>;
 export type RegistrarDiagnosticoInput = z.infer<typeof registrarDiagnosticoSchema>;
+export type CriarItemOSInput = z.infer<typeof criarItemOSSchema>;
 export type RegistrarPagamentoInput = z.infer<typeof registrarPagamentoSchema>;
 export type CriarClienteInput = z.infer<typeof criarClienteSchema>;
 export type CriarProdutoInput = z.infer<typeof criarProdutoSchema>;

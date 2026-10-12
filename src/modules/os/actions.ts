@@ -1,311 +1,144 @@
-// Server Actions para Ordens de Serviço
-
+// Server Actions para Ordens de Serviço — camada fina: autenticação, validação
+// de entrada (Zod) e tradução de erro de domínio pra {success, error}. Toda
+// regra de negócio de verdade vive em src/application/os/*.
 'use server'
 
-import { ZodError } from 'zod'
-import { createClient } from '@/lib/supabase/server'
-import {
-  handleZodError,
-  handleDatabaseError,
-  handleServerAction,
-  logError,
-  logBusinessEvent,
-  type ActionResponse,
-} from '@/lib/errors'
-import { criarOSSchema, CriarOSInput } from './schema'
-import { enviarMensagemWhatsApp } from '@/lib/notificacoes/whatsapp'
+import { checarAutenticado, checarPerfil } from '@/lib/auth/session'
+import { criarOSSchema, criarItemOSSchema, criarClienteSchema } from '@/modules/os/schema'
+import { mensagemDeValidacao } from '@/lib/validacao'
+import { FirestoreOSRepository } from '@/infrastructure/firestore/os-repository'
+import { FirestoreClienteRepository } from '@/infrastructure/firestore/cliente-repository'
+import { criarOSUseCase } from '@/application/os/criar-os'
+import { atualizarStatusOSUseCase, concluirOSUseCase } from '@/application/os/atualizar-status-os'
+import { adicionarItemOSUseCase, removerItemOSUseCase } from '@/application/os/gerenciar-itens-os'
+import { atualizarOSUseCase, deletarOSUseCase, aprovarOrcamentoUseCase } from '@/application/os/gerenciar-os'
+import { criarClienteUseCase } from '@/application/cliente/gerenciar-cliente'
+import { DomainError } from '@/domain/errors'
 
-/**
- * Cria uma nova ordem de serviço e envia notificação WhatsApp
- */
-export async function criarOS(input: CriarOSInput): Promise<ActionResponse> {
-  return handleServerAction(async () => {
-    // 1. Validar entrada
+const osRepo = new FirestoreOSRepository()
+const clienteRepo = new FirestoreClienteRepository()
+
+function mensagemDeErro(err: unknown, fallback: string): string {
+  if (err instanceof DomainError) return err.message
+  return mensagemDeValidacao(err) || fallback
+}
+
+export async function criarOS(input: any) {
+  const bloqueio = await checarAutenticado()
+  if (bloqueio) return bloqueio
+
+  try {
     const validado = criarOSSchema.parse(input)
-    const supabase = await createClient()
-
-    // 2. Inserir OS
-    const { data: os, error: osError } = await supabase
-      .from('ordem_servico')
-      .insert([
-        {
-          cliente_id: validado.cliente_id,
-          defeito_relatado: validado.defeito_relatado,
-          data_entrada: validado.data_entrada,
-          status: 'aberta',
-          orcamento_aprovado: false,
-          dias_garantia: 30,
-        },
-      ])
-      .select('id, numero')
-      .single()
-
-    if (osError) {
-      throw osError
-    }
-
-    // 3. Inserir equipamento
-    const { error: equipError } = await supabase
-      .from('equipamento')
-      .insert([
-        {
-          os_id: os.id,
-          tipo: validado.equipamento_tipo,
-          marca: validado.equipamento_marca,
-          modelo: validado.equipamento_modelo,
-          imei_serial: validado.equipamento_imei,
-          acessorios_entregues: validado.acessorios_entregues || '',
-        },
-      ])
-
-    if (equipError) {
-      // Tentar deletar OS se falhar o equipamento
-      try {
-        await supabase.from('ordem_servico').delete().eq('id', os.id)
-      } catch (e) {
-        logError(e instanceof Error ? e : new Error(String(e)))
-      }
-      throw equipError
-    }
-
-    // 4. Buscar dados do cliente para enviar WhatsApp
-    const { data: cliente, error: clienteError } = await supabase
-      .from('cliente')
-      .select('nome, telefone')
-      .eq('id', validado.cliente_id)
-      .single()
-
-    if (clienteError) {
-      logError(clienteError instanceof Error ? clienteError : new Error(String(clienteError)))
-    }
-
-    // 5. Enviar WhatsApp se houver telefone
-    if (cliente?.telefone) {
-      const mensagem = `
-*Ordem de Serviço #${os.numero}*
-
-Olá ${cliente.nome}! 👋
-
-Sua ordem de serviço foi aberta com sucesso.
-
-📋 *Detalhes:*
-- Número: OS-${os.numero}
-- Equipamento: ${validado.equipamento_marca} ${validado.equipamento_modelo}
-- Defeito: ${validado.defeito_relatado.substring(0, 50)}...
-
-Entraremos em contato em breve com atualizações.
-
-Obrigado!`
-
-      const whatsappResult = await enviarMensagemWhatsApp(cliente.telefone, mensagem)
-      if (!whatsappResult.success) {
-        logError(
-          new Error(whatsappResult.error || 'Erro desconhecido ao enviar WhatsApp'),
-          undefined,
-          'enviarMensagemWhatsApp em criarOS'
-        )
-      }
-    }
-
-    // 6. Log de sucesso
-    logBusinessEvent('Ordem de Serviço Criada', 'os.actions', {
-      osId: os.id,
-      osNumero: os.numero,
-      clienteId: validado.cliente_id,
-      equipamento: `${validado.equipamento_marca} ${validado.equipamento_modelo}`,
-    })
-
-    return {
-      success: true,
-      message: `OS #${os.numero} criada com sucesso`,
-      id: os.id,
-      numero: os.numero,
-    }
-  }, 'criarOS')
+    const os = await criarOSUseCase(osRepo, validado)
+    return { success: true, message: `OS ${os.numero} criada com sucesso`, id: os.id, numero: os.numero }
+  } catch (err) {
+    console.error('Erro ao criar OS:', err)
+    return { success: false, error: mensagemDeErro(err, 'Erro ao criar ordem de serviço') }
+  }
 }
 
-/**
- * Atualiza uma ordem de serviço
- */
-export async function atualizarOS(
-  id: string,
-  updates: Partial<CriarOSInput>
-): Promise<ActionResponse> {
-  return handleServerAction(async () => {
-    const supabase = await createClient()
+export async function atualizarOS(osId: string, dados: Record<string, any>) {
+  const bloqueio = await checarAutenticado()
+  if (bloqueio) return bloqueio
 
-    const { error } = await supabase
-      .from('ordem_servico')
-      .update(updates)
-      .eq('id', id)
-
-    if (error) {
-      throw error
-    }
-
-    logBusinessEvent('Ordem de Serviço Atualizada', 'os.actions', {
-      osId: id,
-      camposAtualizados: Object.keys(updates),
-    })
-
-    return {
-      success: true,
-      message: 'OS atualizada com sucesso',
-    }
-  }, 'atualizarOS')
+  try {
+    await atualizarOSUseCase(osRepo, osId, dados)
+    return { success: true, message: 'OS atualizada com sucesso' }
+  } catch (err) {
+    console.error('Erro ao atualizar OS:', err)
+    return { success: false, error: 'Erro ao atualizar OS' }
+  }
 }
 
-/**
- * Atualiza o status da OS
- */
-export async function atualizarStatusOS(
-  id: string,
-  status: string
-): Promise<ActionResponse> {
-  return handleServerAction(async () => {
-    const supabase = await createClient()
+export async function concluirOS(osId: string) {
+  const bloqueio = await checarAutenticado()
+  if (bloqueio) return bloqueio
 
-    const { error } = await supabase
-      .from('ordem_servico')
-      .update({ status })
-      .eq('id', id)
-
-    if (error) {
-      throw error
-    }
-
-    logBusinessEvent('Status de OS Atualizado', 'os.actions', {
-      osId: id,
-      novoStatus: status,
-    })
-
-    return {
-      success: true,
-      message: 'Status atualizado com sucesso',
-    }
-  }, 'atualizarStatusOS')
+  try {
+    await concluirOSUseCase(osRepo, osId)
+    return { success: true, message: 'OS finalizada com sucesso' }
+  } catch (err) {
+    console.error('Erro ao finalizar OS:', err)
+    return { success: false, error: mensagemDeErro(err, 'Erro ao finalizar OS') }
+  }
 }
 
-/**
- * Deleta uma ordem de serviço
- */
-export async function deletarOS(id: string): Promise<ActionResponse> {
-  return handleServerAction(async () => {
-    const supabase = await createClient()
+export async function atualizarStatusOS(osId: string, novoStatus: string) {
+  const bloqueio = await checarAutenticado()
+  if (bloqueio) return bloqueio
 
-    const { error } = await supabase
-      .from('ordem_servico')
-      .delete()
-      .eq('id', id)
-
-    if (error) {
-      throw error
-    }
-
-    logBusinessEvent('Ordem de Serviço Deletada', 'os.actions', { osId: id })
-
-    return {
-      success: true,
-      message: 'OS deletada com sucesso',
-    }
-  }, 'deletarOS')
+  try {
+    await atualizarStatusOSUseCase(osRepo, osId, novoStatus)
+    return { success: true, message: 'Status atualizado' }
+  } catch (err) {
+    console.error('Erro ao atualizar status:', err)
+    return { success: false, error: mensagemDeErro(err, 'Erro ao atualizar') }
+  }
 }
 
-/**
- * Aprova um orçamento de OS
- */
-export async function aprovarOrcamento(
-  osId: string,
-  valor: number
-): Promise<ActionResponse> {
-  return handleServerAction(async () => {
-    const supabase = await createClient()
+export async function adicionarItemOS(input: any) {
+  const bloqueio = await checarAutenticado()
+  if (bloqueio) return bloqueio
 
-    const { error: osError } = await supabase
-      .from('ordem_servico')
-      .update({
-        orcamento_aprovado: true,
-      })
-      .eq('id', osId)
-
-    if (osError) {
-      throw osError
-    }
-
-    logBusinessEvent('Orçamento de OS Aprovado', 'os.actions', {
-      osId,
-      valor,
-    })
-
-    return {
-      success: true,
-      message: 'Orçamento aprovado com sucesso',
-    }
-  }, 'aprovarOrcamento')
+  try {
+    const validado = criarItemOSSchema.parse(input)
+    const { item, valorOrcamento } = await adicionarItemOSUseCase(osRepo, validado)
+    return { success: true, message: 'Item adicionado com sucesso', id: item.id, valor_orcamento: valorOrcamento }
+  } catch (err) {
+    console.error('Erro ao adicionar item na OS:', err)
+    return { success: false, error: mensagemDeErro(err, 'Erro ao adicionar item') }
+  }
 }
 
-/**
- * Conclui uma ordem de serviço
- */
-export async function concluirOS(osId: string): Promise<ActionResponse> {
-  return handleServerAction(async () => {
-    const supabase = await createClient()
+export async function removerItemOS(itemId: string, osId: string) {
+  const bloqueio = await checarAutenticado()
+  if (bloqueio) return bloqueio
 
-    // 1. Verificar se existem pendências
-    const { data: os, error: osError } = await supabase
-      .from('ordem_servico')
-      .select('status, cliente_id')
-      .eq('id', osId)
-      .single()
+  try {
+    const valorOrcamento = await removerItemOSUseCase(osRepo, itemId, osId)
+    return { success: true, message: 'Item removido com sucesso', valor_orcamento: valorOrcamento }
+  } catch (err) {
+    console.error('Erro ao remover item da OS:', err)
+    return { success: false, error: 'Erro ao remover item' }
+  }
+}
 
-    if (osError) {
-      throw osError
-    }
+export async function deletarOS(osId: string) {
+  const bloqueio = await checarPerfil(['admin'])
+  if (bloqueio) return bloqueio
 
-    if (!os) {
-      throw new Error('OS não encontrada')
-    }
+  try {
+    await deletarOSUseCase(osRepo, osId)
+    return { success: true, message: 'OS deletada' }
+  } catch (err) {
+    console.error('Erro ao deletar:', err)
+    return { success: false, error: 'Erro ao deletar' }
+  }
+}
 
-    // 2. Atualizar status
-    const { error: updateError } = await supabase
-      .from('ordem_servico')
-      .update({
-        status: 'concluida',
-        data_conclusao: new Date().toISOString(),
-      })
-      .eq('id', osId)
+export async function aprovarOrcamento(osId: string, valor: number) {
+  const bloqueio = await checarAutenticado()
+  if (bloqueio) return bloqueio
 
-    if (updateError) {
-      throw updateError
-    }
+  try {
+    await aprovarOrcamentoUseCase(osRepo, osId, valor)
+    return { success: true, message: 'Orçamento aprovado' }
+  } catch (err) {
+    console.error('Erro ao aprovar:', err)
+    return { success: false, error: 'Erro ao aprovar' }
+  }
+}
 
-    // 3. Buscar cliente para enviar notificação
-    const { data: cliente } = await supabase
-      .from('cliente')
-      .select('nome, telefone')
-      .eq('id', os.cliente_id)
-      .single()
+export async function criarCliente(input: any) {
+  const bloqueio = await checarAutenticado()
+  if (bloqueio) return bloqueio
 
-    if (cliente?.telefone) {
-      const mensagem = `
-*Sua OS foi concluída! ✅*
-
-Olá ${cliente.nome}! 
-
-Sua ordem de serviço foi concluída com sucesso.
-
-Entre em contato conosco para retirar seu equipamento.
-
-Obrigado! 🙏`
-
-      await enviarMensagemWhatsApp(cliente.telefone, mensagem)
-    }
-
-    logBusinessEvent('Ordem de Serviço Concluída', 'os.actions', { osId })
-
-    return {
-      success: true,
-      message: 'OS concluída com sucesso',
-    }
-  }, 'concluirOS')
+  try {
+    const validado = criarClienteSchema.parse(input)
+    const cliente = await criarClienteUseCase(clienteRepo, validado)
+    return { success: true, message: 'Cliente criado', id: cliente.id }
+  } catch (err) {
+    console.error('Erro ao criar cliente:', err)
+    return { success: false, error: mensagemDeErro(err, 'Erro ao criar cliente') }
+  }
 }

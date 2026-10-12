@@ -1,147 +1,112 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
-import type { OrdemServico } from './types'
+import { FirestoreOSRepository } from '@/infrastructure/firestore/os-repository'
+import { FirestoreClienteRepository } from '@/infrastructure/firestore/cliente-repository'
+import {
+  listarOSRecentesUseCase,
+  buscarOSPorIdUseCase,
+  listarItensPorOSUseCase,
+  listarOSPorClienteUseCase,
+  buscarEstatisticasOSUseCase,
+} from '@/application/os/consultar-os'
+import { listarClientesUseCase, buscarClientePorIdUseCase, buscarClientesPorNomeUseCase } from '@/application/cliente/gerenciar-cliente'
+import { checarAutenticado } from '@/lib/auth/session'
 
-/**
- * Obtém todas as ordens de serviço com relacionamentos
- */
-export async function buscarTodasOS(): Promise<(OrdemServico & { cliente: { nome: string; telefone?: string } | null; tecnico: { nome: string } | null })[]> {
+const osRepo = new FirestoreOSRepository()
+const clienteRepo = new FirestoreClienteRepository()
+
+export async function buscarTodasOS(limite: number = 300) {
   try {
-    const supabase = await createClient()
+    const bloqueio = await checarAutenticado()
+    if (bloqueio) return []
 
-    const { data, error } = await supabase
-      .from('ordem_servico')
-      .select(`
-        id,
-        numero,
-        status,
-        defeito_relatado,
-        diagnostico,
-        valor_orcamento,
-        orcamento_aprovado,
-        prazo_estimado,
-        data_entrada,
-        data_saida,
-        dias_garantia,
-        cliente_id,
-        tecnico_id,
-        atendente_id,
-        cliente:cliente_id(id, nome, telefone),
-        tecnico:tecnico_id(id, nome)
-      `)
-      .order('data_entrada', { ascending: false })
-
-    if (error) {
-      console.error('Erro ao buscar OS:', error)
-      return []
-    }
-
-    return (data as any) || []
+    return await listarOSRecentesUseCase(osRepo, limite)
   } catch (err) {
     console.error('Erro ao buscar OS:', err)
     return []
   }
 }
 
-/**
- * Obtém uma OS pelo ID
- */
+export async function buscarEstatisticasOS() {
+  try {
+    const bloqueio = await checarAutenticado()
+    if (bloqueio) return { totalOS: 0, osAberta: 0, osEmReparo: 0, osConcluida: 0, osAprovadas: 0, totalClientes: 0 }
+
+    return await buscarEstatisticasOSUseCase(osRepo)
+  } catch (err) {
+    console.error('Erro ao buscar estatísticas de OS:', err)
+    return { totalOS: 0, osAberta: 0, osEmReparo: 0, osConcluida: 0, osAprovadas: 0, totalClientes: 0 }
+  }
+}
+
 export async function buscarOSPorId(id: string) {
   try {
-    const supabase = await createClient()
+    const bloqueio = await checarAutenticado()
+    if (bloqueio) return null
 
-    const { data, error } = await supabase
-      .from('ordem_servico')
-      .select(`
-        *,
-        cliente:cliente_id(*),
-        tecnico:tecnico_id(*),
-        equipamento(*)
-      `)
-      .eq('id', id)
-      .single()
-
-    if (error) return null
-    return data
+    return await buscarOSPorIdUseCase(osRepo, id)
   } catch (err) {
     console.error('Erro ao buscar OS:', err)
     return null
   }
 }
 
-/**
- * Obtém todas as OS de um cliente
- */
+export async function buscarItensPorOS(osId: string) {
+  try {
+    const bloqueio = await checarAutenticado()
+    if (bloqueio) return []
+
+    return await listarItensPorOSUseCase(osRepo, osId)
+  } catch (err) {
+    console.error('Erro ao buscar itens da OS:', err)
+    return []
+  }
+}
+
 export async function buscarOSPorCliente(clienteId: string) {
   try {
-    const supabase = await createClient()
+    const bloqueio = await checarAutenticado()
+    if (bloqueio) return []
 
-    const { data, error } = await supabase
-      .from('ordem_servico')
-      .select('*')
-      .eq('cliente_id', clienteId)
-      .order('data_entrada', { ascending: false })
-
-    if (error) return []
-    return data || []
+    return await listarOSPorClienteUseCase(osRepo, clienteId)
   } catch (err) {
     console.error('Erro ao buscar OS por cliente:', err)
     return []
   }
 }
 
-/**
- * Obtém todas as OS de um técnico
- */
-export async function buscarOSPorTecnico(tecnicoId: string) {
+export async function buscarTodosClientes() {
   try {
-    const supabase = await createClient()
+    const bloqueio = await checarAutenticado()
+    if (bloqueio) return []
 
-    const { data, error } = await supabase
-      .from('ordem_servico')
-      .select('*')
-      .eq('tecnico_id', tecnicoId)
-      .order('data_entrada', { ascending: false })
-
-    if (error) return []
-    return data || []
+    return await listarClientesUseCase(clienteRepo)
   } catch (err) {
-    console.error('Erro ao buscar OS por técnico:', err)
+    console.error('Erro ao buscar clientes:', err)
     return []
   }
 }
 
-/**
- * Obtém OS vencidas (prazo passado)
- */
-export async function buscarOSVencidas() {
+export async function buscarClientePorId(id: string) {
   try {
-    const supabase = await createClient()
+    const bloqueio = await checarAutenticado()
+    if (bloqueio) return null
 
-    const { data, error } = await supabase
-      .from('ordem_servico')
-      .select(`
-        *,
-        cliente:cliente_id(nome, telefone)
-      `)
-      .lt('prazo_estimado', new Date().toISOString())
-      .not('status', 'in', '(entregue,cancelada)')
-      .order('prazo_estimado', { ascending: true })
-
-    if (error) return []
-    return data || []
+    return await buscarClientePorIdUseCase(clienteRepo, id)
   } catch (err) {
-    console.error('Erro ao buscar OS vencidas:', err)
-    return []
+    console.error('Erro ao buscar cliente:', err)
+    return null
   }
 }
 
-/**
- * Obtém próximo número de OS
- */
-export async function proximoNumeroOS() {
-  // TODO: Implementar
-  // SELECT MAX(numero) FROM ordem_servico
-  return 'OS0001'
+export async function buscarClientesPorNome(termo: string) {
+  try {
+    const bloqueio = await checarAutenticado()
+    if (bloqueio) return []
+
+    return await buscarClientesPorNomeUseCase(clienteRepo, termo)
+  } catch (err) {
+    console.error('Erro ao buscar clientes por nome:', err)
+    return []
+  }
 }

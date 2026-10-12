@@ -1,61 +1,27 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
 
-const protectedRoutes = ['/os', '/estoque', '/vendas', '/impressao', '/notificacoes', '/dashboard']
-const authRoutes = ['/login', '/signup']
+// Checagem rápida de presença do cookie de sessão, direto no edge, antes de
+// renderizar a página. Só confere se o cookie existe — a verificação de
+// assinatura/validade de verdade acontece no servidor (src/lib/auth/session.ts),
+// já que o Admin SDK/crypto não roda no runtime do middleware.
+const SESSION_COOKIE = 'bs_session'
+const ROTAS_PUBLICAS = ['/login', '/signup']
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  })
+  const { pathname } = request.nextUrl
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options)
-          })
-        },
-      },
-    }
-  )
-
-  // Verificar sessão
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  // Se é rota protegida e não tem autenticação
-  if (protectedRoutes.some((route) => request.nextUrl.pathname.startsWith(route))) {
-    if (!user) {
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
+  if (ROTAS_PUBLICAS.includes(pathname)) {
+    return NextResponse.next()
   }
 
-  // Se é rota de auth e já está autenticado
-  if (authRoutes.includes(request.nextUrl.pathname)) {
-    if (user) {
-      return NextResponse.redirect(new URL('/os', request.url))
-    }
+  const temSessao = request.cookies.has(SESSION_COOKIE)
+  if (!temSessao) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
   }
 
-  // Se é root e está autenticado, redirecionar para /os
-  if (request.nextUrl.pathname === '/') {
-    if (user) {
-      return NextResponse.redirect(new URL('/os', request.url))
-    }
-    return NextResponse.redirect(new URL('/login', request.url))
-  }
-
-  return response
+  return NextResponse.next()
 }
 
 export const config = {

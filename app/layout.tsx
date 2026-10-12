@@ -4,8 +4,13 @@ import { ErrorBoundary } from '@/components/error/error-boundary'
 import { ToastProvider } from '@/components/error/error-toast'
 
 export const metadata: Metadata = {
-  title: 'Black Tech - Sistema de Assistência Técnica',
+  title: 'BlackCell - Sistema de Assistência Técnica',
   description: 'Gestão completa de ordens de serviço, estoque e vendas',
+  icons: {
+    icon: '/logo-blackcell.png',
+    shortcut: '/logo-blackcell.png',
+    apple: '/logo-blackcell.png',
+  },
 }
 
 export default function RootLayout({

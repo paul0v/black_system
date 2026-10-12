@@ -1,95 +1,60 @@
 'use server'
 
-import { ZodError } from 'zod'
-import { createClient } from '@/lib/supabase/server'
-import {
-  handleZodError,
-  handleDatabaseError,
-  handleServerAction,
-  logError,
-  logBusinessEvent,
-  type ActionResponse,
-} from '@/lib/errors'
+import { checarAutenticado, checarPerfil } from '@/lib/auth/session'
+import { logBusinessEvent } from '@/lib/errors'
+import { mensagemDeValidacao } from '@/lib/validacao'
 import { criarClienteSchema } from '@/modules/os/schema'
 import type { CriarClienteInput } from '@/modules/os/schema'
+import { FirestoreClienteRepository } from '@/infrastructure/firestore/cliente-repository'
+import { criarClienteUseCase, atualizarClienteUseCase, deletarClienteUseCase } from '@/application/cliente/gerenciar-cliente'
 
-/**
- * Cria um novo cliente
- */
-export async function criarCliente(input: CriarClienteInput): Promise<ActionResponse> {
-  return handleServerAction(async () => {
+const clienteRepo = new FirestoreClienteRepository()
+
+export async function criarCliente(input: CriarClienteInput) {
+  const bloqueio = await checarAutenticado()
+  if (bloqueio) return bloqueio
+
+  try {
     const validado = criarClienteSchema.parse(input)
-    const supabase = await createClient()
+    const cliente = await criarClienteUseCase(clienteRepo, validado)
 
-    const { data, error } = await supabase
-      .from('cliente')
-      .insert([validado])
-      .select('id')
-      .single()
+    logBusinessEvent('Cliente Criado', 'cliente.actions', { clienteId: cliente.id, nome: validado.nome })
 
-    if (error) {
-      throw error
-    }
-
-    logBusinessEvent('Cliente Criado', 'cliente.actions', {
-      clienteId: data.id,
-      nome: validado.nome,
-    })
-
-    return {
-      success: true,
-      message: 'Cliente criado com sucesso',
-      id: data.id,
-    }
-  }, 'criarCliente')
+    return { success: true, message: 'Cliente criado com sucesso', id: cliente.id }
+  } catch (err) {
+    console.error('Erro ao criar cliente:', err)
+    return { success: false, error: mensagemDeValidacao(err) || 'Erro ao criar cliente' }
+  }
 }
 
-/**
- * Atualiza um cliente
- */
-export async function atualizarCliente(
-  id: string,
-  updates: Partial<CriarClienteInput>
-): Promise<ActionResponse> {
-  return handleServerAction(async () => {
-    const supabase = await createClient()
+export async function atualizarCliente(id: string, updates: Partial<CriarClienteInput>) {
+  const bloqueio = await checarAutenticado()
+  if (bloqueio) return bloqueio
 
-    const { error } = await supabase
-      .from('cliente')
-      .update(updates)
-      .eq('id', id)
+  try {
+    await atualizarClienteUseCase(clienteRepo, id, updates)
 
-    if (error) {
-      throw error
-    }
-
-    logBusinessEvent('Cliente Atualizado', 'cliente.actions', {
-      clienteId: id,
-      camposAtualizados: Object.keys(updates),
-    })
+    logBusinessEvent('Cliente Atualizado', 'cliente.actions', { clienteId: id, camposAtualizados: Object.keys(updates) })
 
     return { success: true, message: 'Cliente atualizado com sucesso' }
-  }, 'atualizarCliente')
+  } catch (err) {
+    console.error('Erro ao atualizar cliente:', err)
+    return { success: false, error: 'Erro ao atualizar cliente' }
+  }
 }
 
-/**
- * Deleta um cliente
- */
-export async function deletarCliente(id: string): Promise<ActionResponse> {
-  return handleServerAction(async () => {
-    const supabase = await createClient()
+export async function deletarCliente(id: string) {
+  const bloqueio = await checarPerfil(['admin'])
+  if (bloqueio) return bloqueio
 
-    const { error } = await supabase
-      .from('cliente')
-      .delete()
-      .eq('id', id)
-
-    if (error) {
-      throw error
-    }
+  try {
+    await deletarClienteUseCase(clienteRepo, id)
 
     logBusinessEvent('Cliente Deletado', 'cliente.actions', { clienteId: id })
 
     return { success: true, message: 'Cliente deletado com sucesso' }
-  }, 'deletarCliente')
+  } catch (err) {
+    console.error('Erro ao deletar cliente:', err)
+    return { success: false, error: 'Erro ao deletar cliente' }
+  }
 }

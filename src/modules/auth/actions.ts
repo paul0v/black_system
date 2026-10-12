@@ -1,8 +1,10 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/firebase/server'
 import { loginSchema, signupSchema } from '@/modules/auth/schema'
 import type { LoginInput, SignupInput } from '@/modules/auth/types'
+import { criarSessao, destruirSessao, obterSessao } from '@/lib/auth/session'
+import { verificarBloqueio, registrarTentativaFalha, limparTentativas } from '@/lib/auth/rate-limit'
 
 /**
  * Fazer login com email e senha
@@ -10,6 +12,21 @@ import type { LoginInput, SignupInput } from '@/modules/auth/types'
 export async function login(input: LoginInput) {
   try {
     const { email, password } = loginSchema.parse(input)
+
+    // Mensagem de erro de login é sempre a mesma genérica, não importa o
+    // motivo real (senha errada, email inexistente, usuário sem cadastro em
+    // `usuarios`) — evita que alguém descubra quais emails estão cadastrados
+    // só testando login e comparando as respostas (enumeração de usuários).
+    const CREDENCIAIS_INVALIDAS = { success: false as const, error: 'Email ou senha inválidos' }
+
+    const bloqueio = await verificarBloqueio(email)
+    if (bloqueio.bloqueado) {
+      return {
+        success: false,
+        error: `Muitas tentativas de login. Tente novamente em ${bloqueio.minutosRestantes} minuto(s).`,
+      }
+    }
+
     const supabase = await createClient()
 
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -18,19 +35,39 @@ export async function login(input: LoginInput) {
     })
 
     if (error) {
-      return { success: false, error: error.message }
+      console.error('Erro ao autenticar:', error.message)
+      await registrarTentativaFalha(email)
+      return CREDENCIAIS_INVALIDAS
     }
 
-    // Buscar o usuário no banco para obter perfil
+    // Buscar usuário na tabela usuarios
     const { data: usuario, error: usuarioError } = await supabase
-      .from('usuario')
-      .select('id, nome, email, perfil')
-      .eq('id', data.user.id)
+      .from('usuarios')
+      .select('*')
+      .eq('email', email)
       .single()
 
-    if (usuarioError) {
-      return { success: false, error: 'Usuário não encontrado no sistema' }
+    if (usuarioError || !usuario) {
+      console.error('Usuário autenticado no Firebase Auth mas sem registro em usuarios:', email)
+      await registrarTentativaFalha(email)
+      return CREDENCIAIS_INVALIDAS
     }
+
+    if (usuario.ativo === false) {
+      return { success: false, error: 'Usuário desativado. Entre em contato com o administrador.' }
+    }
+
+    // Login certo: limpa o contador de tentativas falhas desse email.
+    await limparTentativas(email)
+
+    // Cria a sessão real (cookie httpOnly assinado) — é isso que as Server Actions
+    // passam a confiar, não mais o localStorage escrito pelo navegador.
+    await criarSessao({
+      uid: usuario.id,
+      email: usuario.email,
+      nome: usuario.nome,
+      perfil: usuario.perfil,
+    })
 
     return { success: true, usuario }
   } catch (err) {
@@ -45,8 +82,13 @@ export async function login(input: LoginInput) {
 export async function signup(input: SignupInput) {
   try {
     const validated = signupSchema.parse(input)
-    const { email, password, nome, perfil } = validated
+    const { email, password, nome } = validated
     const supabase = await createClient()
+
+    // Autocadastro público é sempre perfil "atendente" (menor privilégio).
+    // O valor de `perfil` vindo do formulário é ignorado de propósito: sem essa
+    // trava, qualquer pessoa poderia se cadastrar como admin direto pelo /signup.
+    const perfil = 'atendente' as const
 
     // 1. Criar usuário no Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -68,29 +110,7 @@ export async function signup(input: SignupInput) {
       return { success: false, error: 'Erro ao criar usuário' }
     }
 
-    // 2. Criar registro do usuário na tabela usuario
-    const { data: usuario, error: usuarioError } = await supabase
-      .from('usuario')
-      .insert([
-        {
-          id: authData.user.id,
-          nome,
-          email,
-          perfil,
-          ativo: true,
-          criado_em: new Date().toISOString(),
-        },
-      ])
-      .select('id, nome, email, perfil')
-      .single()
-
-    if (usuarioError) {
-      // Tentar deletar o auth user se falha o registro na tabela
-      await supabase.auth.admin.deleteUser(authData.user.id)
-      return { success: false, error: usuarioError.message }
-    }
-
-    return { success: true, usuario }
+    return { success: true, usuario: { id: authData.user.id, nome, email, perfil } }
   } catch (err) {
     const error = err instanceof Error ? err.message : 'Erro desconhecido'
     return { success: false, error }
@@ -102,13 +122,7 @@ export async function signup(input: SignupInput) {
  */
 export async function logout() {
   try {
-    const supabase = await createClient()
-    const { error } = await supabase.auth.signOut()
-
-    if (error) {
-      return { success: false, error: error.message }
-    }
-
+    await destruirSessao()
     return { success: true }
   } catch (err) {
     const error = err instanceof Error ? err.message : 'Erro desconhecido'
@@ -117,27 +131,20 @@ export async function logout() {
 }
 
 /**
- * Obter sessão atual
+ * Obter sessão atual (a partir do cookie assinado no servidor)
  */
 export async function getSession() {
   try {
-    const supabase = await createClient()
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+    const sessao = await obterSessao()
+    if (!sessao) return null
 
-    if (!session) {
-      return null
+    return {
+      id: sessao.uid,
+      nome: sessao.nome,
+      email: sessao.email,
+      perfil: sessao.perfil,
+      ativo: true,
     }
-
-    // Buscar dados completos do usuário
-    const { data: usuario } = await supabase
-      .from('usuario')
-      .select('id, nome, email, perfil, ativo')
-      .eq('id', session.user.id)
-      .single()
-
-    return usuario
   } catch (err) {
     console.error('Erro ao obter sessão:', err)
     return null
@@ -145,24 +152,18 @@ export async function getSession() {
 }
 
 /**
- * Obter usuário autenticado
+ * Obter usuário autenticado (dados completos, buscados no Firestore)
  */
 export async function getCurrentUser() {
   try {
+    const sessao = await obterSessao()
+    if (!sessao) return null
+
     const supabase = await createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return null
-    }
-
-    // Buscar dados completos
     const { data: usuario } = await supabase
-      .from('usuario')
+      .from('usuarios')
       .select('*')
-      .eq('id', user.id)
+      .eq('id', sessao.uid)
       .single()
 
     return usuario

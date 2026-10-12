@@ -103,11 +103,11 @@ export function ModalDadosOS({
   }
 
   // Quando PDF é gerado, fazer download e fechar modal
-  const handlePDFGerado = async () => {
+  const handlePDFGerado = async (janelaPreAberta?: Window | null) => {
     if (!osData) return
 
     try {
-      await baixarPDFOS(osData, `OS-${osData.numero}.pdf`)
+      await baixarPDFOS(osData, `OS-${osData.numero}.pdf`, janelaPreAberta)
       onSuccess(osData.numero, osData.numero)
       // Reset form
       setFormData({
@@ -149,7 +149,7 @@ export function ModalDadosOS({
             </p>
           </div>
           <button
-            onClick={handlePDFGerado}
+            onClick={() => handlePDFGerado(window.open('', '_blank'))}
             className="w-full border-t p-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-b-lg transition"
           >
             <Download size={16} className="inline mr-2" />
@@ -171,6 +171,7 @@ export function ModalDadosOS({
             onClick={onCancel}
             disabled={loading}
             className="text-gray-500 hover:text-gray-700"
+            aria-label="Fechar"
           >
             <X size={20} />
           </button>

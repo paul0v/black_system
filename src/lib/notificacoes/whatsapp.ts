@@ -1,25 +1,33 @@
 /**
  * Integração com Evolution API para envio de WhatsApp
  */
+'use server'
 
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || ''
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || ''
-const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE_NAME || 'black_system'
+import { buscarConfiguracaoWhatsApp } from '@/modules/configuracoes/queries'
+import { checarAutenticado } from '@/lib/auth/session'
 
 export async function enviarMensagemWhatsApp(
   telefone: string,
   mensagem: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const bloqueio = await checarAutenticado()
+    if (bloqueio) return bloqueio
+
     // Validação básica
     if (!telefone || !mensagem) {
       return { success: false, error: 'Telefone e mensagem são obrigatórios' }
     }
 
-    // Se não houver Evolution API configurada, log apenas
-    if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+    const config = await buscarConfiguracaoWhatsApp()
+    const apiUrl = config.apiUrl || process.env.EVOLUTION_API_URL || ''
+    const apiKey = config.apiKey || process.env.EVOLUTION_API_KEY || ''
+    const instanceName = config.instanceName || process.env.EVOLUTION_INSTANCE_NAME || 'black_system'
+
+    // Se o envio estiver desativado ou sem API configurada, log apenas
+    if (!config.ativo || !apiUrl || !apiKey) {
       console.log(
-        '[WHATSAPP] Mensagem não enviada - Evolution API não configurada',
+        '[WHATSAPP] Mensagem não enviada - Evolution API não configurada/ativada',
         { telefone, mensagem: mensagem.substring(0, 50) }
       )
       return { success: true } // Não falha, apenas não envia
@@ -32,7 +40,7 @@ export async function enviarMensagemWhatsApp(
     }
 
     // Endpoint da Evolution API
-    const url = `${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}`
+    const url = `${apiUrl}/message/sendText/${instanceName}`
 
     const payload = {
       number: telefoneLimpo,
@@ -43,7 +51,7 @@ export async function enviarMensagemWhatsApp(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'apikey': EVOLUTION_API_KEY,
+        'apikey': apiKey,
       },
       body: JSON.stringify(payload),
     })
@@ -74,7 +82,7 @@ export async function enviarMensagemWhatsApp(
 export async function enviarOrcamentoProto(
   telefone: string,
   nomeCliente: string,
-  numeroOS: number,
+  numeroOS: string | number,
   valorOrcamento: number
 ) {
   const mensagem = `
@@ -82,7 +90,7 @@ export async function enviarOrcamentoProto(
 
 Olá ${nomeCliente}!
 
-O orçamento para sua OS #${numeroOS} foi finalizado.
+O orçamento para sua ${numeroOS} foi finalizado.
 
 💰 *Valor do Orçamento:* R$ ${valorOrcamento.toFixed(2)}
 
@@ -99,14 +107,14 @@ Obrigado!`
 export async function enviarEquipamentoPronto(
   telefone: string,
   nomeCliente: string,
-  numeroOS: number
+  numeroOS: string | number
 ) {
   const mensagem = `
 *Seu Equipamento Está Pronto! ✅*
 
 Olá ${nomeCliente}!
 
-Seu equipamento (OS #${numeroOS}) está pronto para retirada!
+Seu equipamento (${numeroOS}) está pronto para retirada!
 
 Por favor, agende um horário para vir buscar.
 

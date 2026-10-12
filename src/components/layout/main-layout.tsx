@@ -21,10 +21,10 @@ export function MainLayout({ children, user }: MainLayoutProps) {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <Header user={user} onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
+        <Header user={user} onMenuClick={() => setSidebarOpen(!sidebarOpen)} sidebarOpen={sidebarOpen} />
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto p-6 bg-gradient-to-br from-gray-950 via-gray-900 to-black">
+        <main className="flex-1 overflow-auto p-4 sm:p-6 bg-gradient-to-br from-gray-950 via-gray-900 to-black">
           {children}
         </main>
       </div>

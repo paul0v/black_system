@@ -6,6 +6,8 @@ import { signup } from '@/modules/auth/actions'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import type { UserProfile } from '@/modules/auth/types'
 
+const PERFIL_AUTOCADASTRO: UserProfile = 'atendente'
+
 export function SignupForm() {
   const router = useRouter()
   const [formData, setFormData] = useState({
@@ -13,7 +15,6 @@ export function SignupForm() {
     password: '',
     confirmPassword: '',
     nome: '',
-    perfil: 'atendente' as UserProfile,
   })
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
@@ -43,7 +44,7 @@ export function SignupForm() {
         password: formData.password,
         confirmPassword: formData.confirmPassword,
         nome: formData.nome,
-        perfil: formData.perfil,
+        perfil: PERFIL_AUTOCADASTRO,
       })
 
       if (!result.success) {
@@ -99,27 +100,9 @@ export function SignupForm() {
       </div>
 
       {/* Perfil */}
-      <div className="space-y-2">
-        <label htmlFor="perfil" className="block text-sm font-semibold text-orange-400">
-          Tipo de Usuário
-        </label>
-        <select
-          id="perfil"
-          value={formData.perfil}
-          onChange={(e) => setFormData({ ...formData, perfil: e.target.value as UserProfile })}
-          disabled={loading}
-          className="w-full px-4 py-2.5 bg-gray-800/50 border border-orange-600/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all disabled:opacity-50"
-        >
-          <option value="atendente">Atendente</option>
-          <option value="tecnico">Técnico</option>
-          <option value="admin">Administrador</option>
-        </select>
-        <p className="text-xs text-orange-400/70">
-          {formData.perfil === 'admin'
-            ? 'Acesso completo ao sistema'
-            : formData.perfil === 'tecnico'
-              ? 'Acesso apenas às suas ordens'
-              : 'Acesso geral às ordens'}
+      <div className="p-3 bg-gray-800/30 border border-orange-600/20 rounded-lg">
+        <p className="text-xs text-gray-400">
+          Sua conta será criada como <strong className="text-orange-400">Atendente</strong>. Um administrador pode alterar seu perfil depois em Configurações → Usuários.
         </p>
       </div>
 
@@ -144,6 +127,7 @@ export function SignupForm() {
             onClick={() => setShowPassword(!showPassword)}
             disabled={loading}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-orange-400 disabled:opacity-50 transition-colors"
+            aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
           >
             {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
@@ -172,6 +156,7 @@ export function SignupForm() {
             onClick={() => setShowConfirm(!showConfirm)}
             disabled={loading}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-orange-400 disabled:opacity-50 transition-colors"
+            aria-label={showConfirm ? 'Ocultar confirmação de senha' : 'Mostrar confirmação de senha'}
           >
             {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
@@ -188,8 +173,8 @@ export function SignupForm() {
       {/* Submit */}
       <button
         type="submit"
-        disabled={loading || !formData.email || !formData.password || !formData.nome}
-        className="w-full py-3 px-4 bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-700 hover:to-orange-600 disabled:from-gray-600 disabled:to-gray-600 disabled:opacity-50 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-orange-500/50"
+        disabled={loading}
+        className="w-full py-3 px-4 bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-700 hover:to-orange-600 active:from-orange-700 active:to-orange-600 active:scale-[0.97] disabled:from-gray-600 disabled:to-gray-600 disabled:opacity-50 disabled:active:scale-100 text-white font-semibold rounded-lg transition-all duration-150 flex items-center justify-center gap-2 shadow-lg hover:shadow-orange-500/50"
       >
         {loading && <Loader2 size={18} className="animate-spin" />}
         {loading ? 'Criando conta...' : 'Criar Conta'}

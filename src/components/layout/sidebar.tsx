@@ -3,8 +3,6 @@
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import {
-  Menu,
-  X,
   Wrench,
   Package,
   ShoppingCart,
@@ -51,14 +49,6 @@ export function Sidebar({ open, onToggle, user }: SidebarProps) {
 
   return (
     <>
-      {/* Mobile menu button */}
-      <button
-        onClick={onToggle}
-        className="absolute top-4 left-4 z-50 md:hidden p-2 rounded-lg bg-black text-orange-500 hover:bg-gray-900"
-      >
-        {open ? <X size={24} /> : <Menu size={24} />}
-      </button>
-
       {/* Sidebar */}
       <aside
         className={cn(
@@ -67,11 +57,14 @@ export function Sidebar({ open, onToggle, user }: SidebarProps) {
         )}
       >
         {/* Logo */}
-        <div className="p-6 border-b border-orange-600 bg-gradient-to-r from-black to-gray-900">
-          <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-orange-600">
-            ⚙️ Black Tech
-          </h1>
-          <p className="text-xs text-orange-500 mt-2 font-semibold">{user.perfil.toUpperCase()}</p>
+        <div className="p-6 border-b border-orange-600 bg-gradient-to-r from-black to-gray-900 flex items-center gap-3">
+          <img src="/logo-blackcell.png" alt="BlackCell" className="w-12 h-12 rounded-lg flex-shrink-0" />
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-orange-600 truncate">
+              BlackCell
+            </h1>
+            <p className="text-xs text-orange-500 font-semibold">{user.perfil.toUpperCase()}</p>
+          </div>
         </div>
 
         {/* Menu */}
