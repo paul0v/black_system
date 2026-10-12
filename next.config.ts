@@ -20,6 +20,11 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   reactCompiler: true,
   allowedDevOrigins: ["192.168.1.4", "192.168.1.5"],
+  // firebase-admin (via jwks-rsa -> jose) tem um submódulo ESM-only que o
+  // bundler do Next (Turbopack) não consegue empacotar corretamente — isso
+  // quebra em produção com "ERR_REQUIRE_ESM". Pedindo pro Next não empacotar
+  // esse pacote (usar ele direto do node_modules em runtime) resolve.
+  serverExternalPackages: ["firebase-admin"],
   async headers() {
     return [
       {
